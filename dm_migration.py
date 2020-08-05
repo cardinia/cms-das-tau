@@ -7,40 +7,63 @@ cms_style(gStyle)
 gStyle.SetTitleOffset(1.65, "Y")
 gStyle.SetPadLeftMargin(0.20)
 
-def dm_migration(f_name, title='', tree_prod_name='per_tau'):
+def dm_migration(tree, tau_dm_string=None, labels=None, gen_cut='tau_genpt>20 && abs(tau_geneta)<2.3', title='', formats=[]):
+    '''Creates a decay mode migration plot.
+    Parameters:
+        tree (ROOT TTree): input tree
+        tau_dm_string (str): draw expression that maps the decay modes onto ints 
+                             (-2: undefined, used only for reco axis)
+                             (-1 and following: regular decay modes)
+        labels (list of str): labels for
+        title (str): title used for output plot
+        formats (list of str): picture formats used for output plot
+
+    '''
+    if not tau_dm_string:
+        tau_dm_string = ('-2'
+                         '+ (tau_pt>20 && tau_dm>=0 && tau_dm <200)*(1 ' # will contain reco DM 5 and 6 and other gen DMs
+                            '+ (tau_dm==0)'
+                            '+ 2*(tau_dm==1||tau_dm==2)'
+                            '+ 3*(tau_dm==10)'
+                            '+ 4*(tau_dm==11))'
+            )
+
+
+    if not labels:
+        labels = ['None', 'Other', '#pi', '#pi#pi^{0}s', '#pi#pi#pi', '#pi#pi#pi#pi^{0}s']
+
     canvas = TCanvas('decay_mode_matrix')
 
-    f_in = TFile(f_name)
-    tree = f_in.Get(tree_prod_name)
+    n_l = len(labels)
+    h_migration = TH2F('migration{}'.format(title), '', n_l-1, -1., n_l-2., n_l, -2, n_l-2.)
+    tree.Project(h_migration.GetName(), tau_dm_string+':'+tau_dm_string.replace('tau_', 'tau_gen'), gen_cut)
 
-    tau_dm_string = '(tau_pt>20)*((tau_dm==0 || tau_dm==1 || tau_dm==2 || tau_dm==10 || tau_dm==11)*(tau_dm - 8*(tau_dm==10) - 8*(tau_dm==11) - 1*(tau_dm==2)) - 1 *(!(tau_dm==0 || tau_dm==1 || tau_dm==2|| tau_dm==10|| tau_dm==11) && tau_dm>0 && tau_dm<200) - 2 *(!(tau_dm==0 || tau_dm==1 || tau_dm==2 || tau_dm==10 || tau_dm==11) && (tau_dm<0 || tau_dm>=200))) - 2*(tau_pt<20)'
-    cut = 'tau_genpt>20 && abs(tau_geneta)<2.3'
-
-    h_migration = TH2F('migration{}'.format(title), '', 5, -1., 4., 6, -2, 4.)
-    tree.Project(h_migration.GetName(), tau_dm_string+':'+tau_dm_string.replace('tau_', 'tau_gen'), cut)
-
-    label = ['None', 'Other', '#pi', '#pi#pi^{0}s', '#pi#pi#pi', '#pi#pi#pi#pi^{0}s']
-    for ybin in range(1, h_migration.GetYaxis().GetNbins()+1):
-        h_migration.GetYaxis().SetBinLabel(ybin, label[ybin-1])
+    for y_bin in range(1, h_migration.GetYaxis().GetNbins()+1):
+        h_migration.GetYaxis().SetBinLabel(y_bin, labels[y_bin-1])
     for x_bin in range(1, h_migration.GetXaxis().GetNbins()+1):
-        h_migration.GetXaxis().SetBinLabel(x_bin, label[x_bin])
+        h_migration.GetXaxis().SetBinLabel(x_bin, labels[x_bin])
 
     h_migration.GetYaxis().SetTitle('Offline DM')
-    h_migration.GetXaxis().SetTitle('Gen DM')
+    h_migration.GetXaxis().SetTitle('Generated DM')
 
     for x_bin in range(1, h_migration.GetNbinsX()+1):
-        int_y = sum(h_migration.GetBinContent(x_bin, ybin) for ybin in range(1, h_migration.GetNbinsY()+1))
+        int_y = sum(h_migration.GetBinContent(x_bin, y_bin) for y_bin in range(1, h_migration.GetNbinsY()+1))
         if int_y == 0.:
             int_y = 1.
-        for ybin in range(1, h_migration.GetNbinsY()+1):
-            h_migration.SetBinContent(x_bin, ybin, h_migration.GetBinContent(x_bin, ybin)/int_y)
+        for y_bin in range(1, h_migration.GetNbinsY()+1):
+            h_migration.SetBinContent(x_bin, y_bin, h_migration.GetBinContent(x_bin, y_bin)/int_y)
 
     h_migration.Draw('TEXT')
     h_migration.SetMarkerColor(1)
     h_migration.SetMarkerSize(2.2)
     gStyle.SetPaintTextFormat("1.2f")
 
-    canvas.Print('dm_migration_{}.png'.format(title))
+    for f in formats:
+        canvas.Print(f'dm_migration_{title}.{f}')
+
+    canvas.keeper = h_migration
+
+    return canvas
 
 
 if __name__ == '__main__':
@@ -50,9 +73,9 @@ if __name__ == '__main__':
     parser.add_argument('-t', '--treeName', default='per_tau', help='Name of TTree in file')
     args = parser.parse_args()
 
-    f_name = args.inputFile
     title = args.label
-    tree_prod_name = args.treeName
-    dm_migration(f_name, title, tree_prod_name)
+    f_in = TFile.Open(args.inputFile)
+    tree = f_in.Get(args.treeName)
+    dm_migration(tree, title=title, formats=['png'])
 
     
